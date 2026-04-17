@@ -6,7 +6,7 @@ import base64
 import json
 import mimetypes
 import time
-from datetime import datetime, date, timedelta, time as dtime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, List, Tuple
 from urllib.parse import urlencode
@@ -32,35 +32,55 @@ def chunked(items: List[int], chunk_size: int) -> Iterable[List[int]]:
         yield items[i:i + chunk_size]
 
 
-def parse_date(value: str) -> date:
-    return datetime.strptime(value, "%Y-%m-%d").date()
+def parse_datetime(value: str) -> datetime:
+    """
+    Aceita:
+      YYYY-MM-DD
+      YYYY-MM-DD HH:MM
+      YYYY-MM-DD HH:MM:SS
+    """
+    formats = [
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            pass
+
+    raise ValueError(
+        f"Data/hora inválida: {value}. "
+        f"Use um destes formatos: YYYY-MM-DD, YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM:SS"
+    )
 
 
-def format_api_datetime(day: date) -> str:
-    dt = datetime.combine(day, dtime.min)
+def format_api_datetime(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.000")
 
 
-def daterange_windows(start_day: date, end_day_inclusive: date, window_days: int) -> Iterable[Tuple[date, date]]:
+def datetime_windows(start_dt: datetime, end_dt: datetime, window_hours: int) -> Iterable[Tuple[datetime, datetime]]:
     """
     Gera janelas contínuas.
-    Exemplo com window_days=2:
-      2016-01-01 -> 2016-01-03
-      2016-01-03 -> 2016-01-05
-      ...
+    Ex. com window_hours=1:
+      00:00 -> 01:00
+      01:00 -> 02:00
+      02:00 -> 03:00
+    'end_dt' é exclusivo.
     """
-    current = start_day
-    while current <= end_day_inclusive:
-        next_day = current + timedelta(days=window_days)
-        yield current, next_day
-        current = next_day
+    current = start_dt
+    while current < end_dt:
+        next_dt = current + timedelta(hours=window_hours)
+        yield current, next_dt
+        current = next_dt
 
 
-def build_url(batch_ids: List[int], start_day: date, end_day: date) -> str:
+def build_url(batch_ids: List[int], start_dt: datetime, end_dt: datetime) -> str:
     params = {
         "idOrgaoJulgador": [str(x) for x in batch_ids],
-        "dataHoraAtualizacaoInicio": format_api_datetime(start_day),
-        "dataHoraAtualizacaoFim": format_api_datetime(end_day),
+        "dataHoraAtualizacaoInicio": format_api_datetime(start_dt),
+        "dataHoraAtualizacaoFim": format_api_datetime(end_dt),
     }
     return f"{BASE_URL}?{urlencode(params, doseq=True)}"
 
@@ -148,22 +168,22 @@ def try_parse_json_bytes(body: bytes):
 
 def save_result(
     output_dir: Path,
-    day_start: date,
-    day_end: date,
+    start_dt: datetime,
+    end_dt: datetime,
     batch_index: int,
     batch_ids: List[int],
     url: str,
     result: dict,
 ) -> None:
-    dir_name = f"{day_start.strftime('%Y-%m-%d')}__{day_end.strftime('%Y-%m-%d')}"
-    day_dir = output_dir / dir_name
+    day_dir = output_dir / start_dt.strftime("%Y-%m-%d")
     day_dir.mkdir(parents=True, exist_ok=True)
 
     ids_str = "-".join(str(x) for x in batch_ids)
+
     base_name = (
         f"batch_{batch_index:03d}"
-        f"__inicio_{day_start.strftime('%Y-%m-%d')}"
-        f"__fim_{day_end.strftime('%Y-%m-%d')}"
+        f"__inicio_{start_dt.strftime('%Y-%m-%d_%H-%M-%S')}"
+        f"__fim_{end_dt.strftime('%Y-%m-%d_%H-%M-%S')}"
         f"__ids_{ids_str}"
     )
 
@@ -197,8 +217,8 @@ def save_result(
         "saved_body_file": body_path.name,
         "batch_index": batch_index,
         "ids": batch_ids,
-        "dataHoraAtualizacaoInicio": format_api_datetime(day_start),
-        "dataHoraAtualizacaoFim": format_api_datetime(day_end),
+        "dataHoraAtualizacaoInicio": format_api_datetime(start_dt),
+        "dataHoraAtualizacaoFim": format_api_datetime(end_dt),
         "response_headers": result["headers"],
     }
 
@@ -214,24 +234,24 @@ def append_log(log_file: Path, message: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Indexação do PJe por lotes de órgãos, janelas de 2 dias e Basic Auth."
+        description="Indexação do PJe por lotes de órgãos, janela horária e Basic Auth."
     )
-    parser.add_argument("--inicio", required=True, help="Data inicial no formato YYYY-MM-DD")
-    parser.add_argument("--fim", required=True, help="Última data base no formato YYYY-MM-DD")
+    parser.add_argument("--inicio", required=True, help="Início: YYYY-MM-DD ou YYYY-MM-DD HH:MM[:SS]")
+    parser.add_argument("--fim", required=True, help="Fim exclusivo: YYYY-MM-DD ou YYYY-MM-DD HH:MM[:SS]")
     parser.add_argument("--usuario", required=True, help="Usuário do Basic Auth")
     parser.add_argument("--senha", required=True, help="Senha do Basic Auth")
     parser.add_argument("--saida", default="./saida_indexacao_pje", help="Diretório de saída")
     parser.add_argument("--intervalo", type=int, default=1, help="Intervalo mínimo entre requisições em segundos")
     parser.add_argument("--lote", type=int, default=1, help="Quantidade de órgãos por requisição")
-    parser.add_argument("--janela", type=int, default=1, help="Quantidade de dias por janela")
+    parser.add_argument("--janela-horas", type=int, default=1, help="Quantidade de horas por janela")
     parser.add_argument("--timeout", type=int, default=180, help="Timeout da requisição em segundos")
     args = parser.parse_args()
 
-    start_day = parse_date(args.inicio)
-    end_day_inclusive = parse_date(args.fim)
+    start_dt = parse_datetime(args.inicio)
+    end_dt = parse_datetime(args.fim)
 
-    if end_day_inclusive < start_day:
-        raise ValueError("A data final não pode ser menor que a data inicial.")
+    if end_dt <= start_dt:
+        raise ValueError("O parâmetro --fim deve ser maior que --inicio.")
 
     output_dir = Path(args.saida)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -239,10 +259,10 @@ def main():
     log_file = output_dir / "execucao.log"
 
     append_log(log_file, "Início da execução")
-    append_log(log_file, f"Período: {start_day} até {end_day_inclusive}")
+    append_log(log_file, f"Período: {start_dt} até {end_dt} (fim exclusivo)")
     append_log(log_file, f"Total de órgãos: {len(ORGAOS_PADRAO)}")
     append_log(log_file, f"Tamanho do lote: {args.lote}")
-    append_log(log_file, f"Janela em dias: {args.janela}")
+    append_log(log_file, f"Janela em horas: {args.janela_horas}")
     append_log(log_file, f"Intervalo mínimo entre requisições: {args.intervalo}s")
 
     last_request_finished_at = None
@@ -250,7 +270,7 @@ def main():
     total_success = 0
     total_fail = 0
 
-    for window_start, window_end in daterange_windows(start_day, end_day_inclusive, args.janela):
+    for window_start, window_end in datetime_windows(start_dt, end_dt, args.janela_horas):
         print(f"\n=== Processando janela {window_start} -> {window_end} ===")
         append_log(log_file, f"Iniciando janela {window_start} -> {window_end}")
 
@@ -259,10 +279,16 @@ def main():
 
             url = build_url(batch_ids, window_start, window_end)
 
-            print(f"[REQ] Janela {window_start}->{window_end} | lote {batch_index:03d} | IDs {batch_ids}")
+            print(
+                f"[REQ] Janela {window_start.strftime('%Y-%m-%d %H:%M:%S')} -> "
+                f"{window_end.strftime('%Y-%m-%d %H:%M:%S')} | "
+                f"lote {batch_index:03d} | IDs {batch_ids}"
+            )
+
             append_log(
                 log_file,
-                f"Enviando requisição | janela={window_start}->{window_end} | lote={batch_index:03d} | ids={batch_ids}"
+                f"Enviando requisição | janela={window_start}->{window_end} | "
+                f"lote={batch_index:03d} | ids={batch_ids}"
             )
 
             result = request_url(
@@ -275,8 +301,8 @@ def main():
 
             save_result(
                 output_dir=output_dir,
-                day_start=window_start,
-                day_end=window_end,
+                start_dt=window_start,
+                end_dt=window_end,
                 batch_index=batch_index,
                 batch_ids=batch_ids,
                 url=url,
@@ -289,7 +315,8 @@ def main():
                 print(f"[OK ] status={result['status_code']}")
                 append_log(
                     log_file,
-                    f"Sucesso | janela={window_start}->{window_end} | lote={batch_index:03d} | status={result['status_code']}"
+                    f"Sucesso | janela={window_start}->{window_end} | "
+                    f"lote={batch_index:03d} | status={result['status_code']}"
                 )
             else:
                 total_fail += 1
@@ -302,7 +329,8 @@ def main():
 
     append_log(
         log_file,
-        f"Fim da execução | total_requests={total_requests} | success={total_success} | fail={total_fail}"
+        f"Fim da execução | total_requests={total_requests} | "
+        f"success={total_success} | fail={total_fail}"
     )
 
     print("\n=== RESUMO ===")
