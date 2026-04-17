@@ -33,12 +33,6 @@ def chunked(items: List[int], chunk_size: int) -> Iterable[List[int]]:
 
 
 def parse_datetime(value: str) -> datetime:
-    """
-    Aceita:
-      YYYY-MM-DD
-      YYYY-MM-DD HH:MM
-      YYYY-MM-DD HH:MM:SS
-    """
     formats = [
         "%Y-%m-%d",
         "%Y-%m-%d %H:%M",
@@ -52,7 +46,7 @@ def parse_datetime(value: str) -> datetime:
 
     raise ValueError(
         f"Data/hora inválida: {value}. "
-        f"Use um destes formatos: YYYY-MM-DD, YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM:SS"
+        f"Use: YYYY-MM-DD, YYYY-MM-DD HH:MM ou YYYY-MM-DD HH:MM:SS"
     )
 
 
@@ -60,18 +54,10 @@ def format_api_datetime(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.000")
 
 
-def datetime_windows(start_dt: datetime, end_dt: datetime, window_hours: int) -> Iterable[Tuple[datetime, datetime]]:
-    """
-    Gera janelas contínuas.
-    Ex. com window_hours=1:
-      00:00 -> 01:00
-      01:00 -> 02:00
-      02:00 -> 03:00
-    'end_dt' é exclusivo.
-    """
+def datetime_windows(start_dt: datetime, end_dt: datetime, window_minutes: int) -> Iterable[Tuple[datetime, datetime]]:
     current = start_dt
     while current < end_dt:
-        next_dt = current + timedelta(hours=window_hours)
+        next_dt = current + timedelta(minutes=window_minutes)
         yield current, next_dt
         current = next_dt
 
@@ -234,16 +220,16 @@ def append_log(log_file: Path, message: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Indexação do PJe por lotes de órgãos, janela horária e Basic Auth."
+        description="Indexação do PJe por lotes de órgãos, janela de 10 minutos e Basic Auth."
     )
     parser.add_argument("--inicio", required=True, help="Início: YYYY-MM-DD ou YYYY-MM-DD HH:MM[:SS]")
     parser.add_argument("--fim", required=True, help="Fim exclusivo: YYYY-MM-DD ou YYYY-MM-DD HH:MM[:SS]")
     parser.add_argument("--usuario", required=True, help="Usuário do Basic Auth")
     parser.add_argument("--senha", required=True, help="Senha do Basic Auth")
     parser.add_argument("--saida", default="./saida_indexacao_pje", help="Diretório de saída")
-    parser.add_argument("--intervalo", type=int, default=1, help="Intervalo mínimo entre requisições em segundos")
-    parser.add_argument("--lote", type=int, default=1, help="Quantidade de órgãos por requisição")
-    parser.add_argument("--janela-horas", type=int, default=1, help="Quantidade de horas por janela")
+    parser.add_argument("--intervalo", type=int, default=10, help="Intervalo mínimo entre requisições em segundos")
+    parser.add_argument("--lote", type=int, default=5, help="Quantidade de órgãos por requisição")
+    parser.add_argument("--janela-minutos", type=int, default=10, help="Quantidade de minutos por janela")
     parser.add_argument("--timeout", type=int, default=180, help="Timeout da requisição em segundos")
     args = parser.parse_args()
 
@@ -262,7 +248,7 @@ def main():
     append_log(log_file, f"Período: {start_dt} até {end_dt} (fim exclusivo)")
     append_log(log_file, f"Total de órgãos: {len(ORGAOS_PADRAO)}")
     append_log(log_file, f"Tamanho do lote: {args.lote}")
-    append_log(log_file, f"Janela em horas: {args.janela_horas}")
+    append_log(log_file, f"Janela em minutos: {args.janela_minutos}")
     append_log(log_file, f"Intervalo mínimo entre requisições: {args.intervalo}s")
 
     last_request_finished_at = None
@@ -270,7 +256,7 @@ def main():
     total_success = 0
     total_fail = 0
 
-    for window_start, window_end in datetime_windows(start_dt, end_dt, args.janela_horas):
+    for window_start, window_end in datetime_windows(start_dt, end_dt, args.janela_minutos):
         print(f"\n=== Processando janela {window_start} -> {window_end} ===")
         append_log(log_file, f"Iniciando janela {window_start} -> {window_end}")
 
