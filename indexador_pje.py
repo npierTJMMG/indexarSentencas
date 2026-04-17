@@ -227,9 +227,9 @@ def main():
     parser.add_argument("--usuario", required=True, help="Usuário do Basic Auth")
     parser.add_argument("--senha", required=True, help="Senha do Basic Auth")
     parser.add_argument("--saida", default="./saida_indexacao_pje", help="Diretório de saída")
-    parser.add_argument("--intervalo", type=int, default=10, help="Intervalo mínimo entre requisições em segundos")
-    parser.add_argument("--lote", type=int, default=5, help="Quantidade de órgãos por requisição")
-    parser.add_argument("--janela-minutos", type=int, default=10, help="Quantidade de minutos por janela")
+    parser.add_argument("--intervalo", type=int, default=1, help="Intervalo mínimo entre requisições em segundos")
+    parser.add_argument("--lote", type=int, default=1, help="Quantidade de órgãos por requisição")
+    parser.add_argument("--janela-minutos", type=int, default=60, help="Quantidade de minutos por janela")
     parser.add_argument("--timeout", type=int, default=180, help="Timeout da requisição em segundos")
     args = parser.parse_args()
 
