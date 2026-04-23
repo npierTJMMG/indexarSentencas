@@ -14,16 +14,14 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 
-BASE_URL = "https://gateway.cloud.pje.jus.br/banco-sentencas/api/sentencas/indexarOrgao"
+BASE_URL = "https://gateway.cloud.pje.jus.br/banco-sentencas/api/sentencas/indexarOrgaoClasse?idClasse=11037"
 
 ORGAOS_PADRAO = [
-    4060, 4435, 8326, 4182, 11435,
-    3012, 14141, 14142, 14143, 81647,
-    81648, 3815, 6386, 4504, 84227,
-    6036, 6773, 86926, 11726, 26457,
-    7346, 81314, 4452, 13231, 13232,
-    13234, 13235, 81338, 15661, 15662,
-    15663, 17970, 29004, 29005, 5201,
+  14141,14142,14143,81647,81648,13231,13232,13234,13235,15661,17970,15662,15663,
+  29004,29005,32693,32694,32695,32696,32697,32698,32699,32700,32701,32702,32703,
+  32704,32705,32706,32707,32708,32709,32710,32711,4060,4435,8326,4182,11435,3012,
+  3815,6386,4504,84227,6036,6773,86926,11726,26457,7346,81314,4452,81338,5201,
+  16426,8192,75532,75533,87899,87900,2771,13809,87626,87627,87714,87715
 ]
 
 
@@ -68,7 +66,7 @@ def build_url(batch_ids: List[int], start_dt: datetime, end_dt: datetime) -> str
         "dataHoraAtualizacaoInicio": format_api_datetime(start_dt),
         "dataHoraAtualizacaoFim": format_api_datetime(end_dt),
     }
-    return f"{BASE_URL}?{urlencode(params, doseq=True)}"
+    return f"{BASE_URL}&{urlencode(params, doseq=True)}"
 
 
 def build_basic_auth_header(username: str, password: str) -> str:
